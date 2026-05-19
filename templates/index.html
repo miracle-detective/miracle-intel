@@ -165,6 +165,8 @@ table{width:100%;border-collapse:collapse;min-width:520px}
     <button class="nb" onclick="ST('osint')" id="t-osint">📊 OSINT 보고서</button>
     <button class="nb" onclick="ST('forensics')" id="t-forensics">💻 포렌식</button>
     <button class="nb" onclick="ST('security')" id="t-security">🛡️ 보안</button>
+    <button class="nb" onclick="ST('dart')" id="t-dart">🏢 기업공시</button>
+    <button class="nb" onclick="ST('biz')" id="t-biz">🔎 사업자조회</button>
   </div>
   <div id="mn">
 
@@ -452,6 +454,43 @@ table{width:100%;border-collapse:collapse;min-width:520px}
   </div>
 </div>
 
+
+  <!-- DART 기업공시 탭 -->
+  <div id="p-dart" style="display:none">
+    <div class="st">🏢 DART 금감원 기업공시 조회</div>
+    <div class="blk" style="margin-bottom:12px">
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+        <input id="dart-corp" class="inp" placeholder="기업명 입력 (예: 삼성전자, 카카오)" style="flex:1;min-width:200px">
+        <button id="dartbtn" class="btn" onclick="runDart()">🏢 공시 조회</button>
+      </div>
+      <div style="font-size:var(--fs-xs);color:#555">금융감독원 DART 전자공시시스템 연동 · 상장기업 공시정보 실시간 조회</div>
+    </div>
+    <div id="dart-result"><div class="emp"><div class="emp-icon">🏢</div><p>기업명을 입력하고 조회하세요</p><p style="font-size:var(--fs-xs);color:#555;margin-top:8px">상장기업 공시, 감사보고서, 사업보고서 등 조회 가능</p></div></div>
+  </div>
+
+  <!-- 사업자조회 탭 -->
+  <div id="p-biz" style="display:none">
+    <div class="st">🔎 국세청 사업자등록 조회</div>
+    <div class="blk" style="margin-bottom:12px">
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+        <input id="biz-no" class="inp" placeholder="사업자등록번호 10자리 (예: 2208819004)" style="flex:1;min-width:200px" maxlength="12" oninput="this.value=this.value.replace(/[^0-9]/g,'')">
+        <button id="bizbtn" class="btn" onclick="runBiz()">🔎 조회</button>
+      </div>
+      <div style="font-size:var(--fs-xs);color:#555">국세청 사업자등록정보 진위확인 API · 사업 상태·폐업여부·과세유형 실시간 확인</div>
+    </div>
+    <div class="blk" style="margin-bottom:12px">
+      <div class="st" style="font-size:var(--fs-xs);margin-bottom:8px">🔍 사업자 진위확인 (상세)</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+        <input id="biz-no2" class="inp" placeholder="사업자등록번호 10자리" maxlength="10" oninput="this.value=this.value.replace(/[^0-9]/g,'')">
+        <input id="biz-pnm" class="inp" placeholder="대표자명">
+        <input id="biz-bnm" class="inp" placeholder="상호명">
+        <input id="biz-sdt" class="inp" placeholder="개업일자 (예: 20250109)">
+      </div>
+      <button id="bizbtn2" class="btn" onclick="runBizValidate()">🔍 진위확인</button>
+    </div>
+    <div id="biz-result"><div class="emp"><div class="emp-icon">🔎</div><p>사업자등록번호를 입력하고 조회하세요</p><p style="font-size:var(--fs-xs);color:#555;margin-top:8px">계속사업자 · 휴업 · 폐업 여부 확인 가능</p></div></div>
+  </div>
+
 <script>
 const API=window.location.origin;
 const SD={b:0,d:0,r:0},RL={w:10000,max:5,c:[]};
@@ -467,7 +506,7 @@ function LT(t,a){const log=document.getElementById('tlog');if(!log)return;const 
 function UC(){const e=document.getElementById('clk');if(e)e.textContent=new Date().toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit',second:'2-digit'});}UC();setInterval(UC,1000);
 const TKS=['🔒 Python FastAPI 백엔드 연결 정상','✔ 대한민국 법률 실시간 연동','📄 의뢰인 보고서 인쇄 가능','✔ 유튜브 인라인 재생 지원','🛡️ 취급업무 21종 전체 탑재','⬡ MIRACLE INTEL v5.4 통합검색 운영 중'];
 let ti=0;function RT(){const e=document.getElementById('tk');if(e){e.style.opacity='0';setTimeout(()=>{e.textContent=TKS[ti++%TKS.length];e.style.opacity='1';},300);}}RT();setInterval(RT,4000);
-function ST(t){['dash','client','law','method','media','ai','search','osint','forensics','security'].forEach(id=>{const el=document.getElementById('p-'+id);if(el)el.style.display=id===t?'block':'none';const btn=document.getElementById('t-'+id);if(btn)btn.classList.toggle('active',id===t);});if(t==='forensics')RF();}
+function ST(t){['dash','client','law','method','media','ai','search','osint','forensics','security','dart','biz'].forEach(id=>{const el=document.getElementById('p-'+id);if(el)el.style.display=id===t?'block':'none';const btn=document.getElementById('t-'+id);if(btn)btn.classList.toggle('active',id===t);});if(t==='forensics')RF();}
 function lBtn(id,t){const b=document.getElementById(id);if(b){b.disabled=true;b.innerHTML=`<span class="spinner"></span>${t}`;}}
 function rBtn(id,t){const b=document.getElementById(id);if(b){b.disabled=false;b.textContent=t;}}
 function getYTId(url){if(!url)return null;const m=url.match(/(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/);return m?m[1]:null;}
@@ -1130,6 +1169,125 @@ function renderSearchResults(data, filter){
 }
 
 RC();RF();
+
+async function runDart(){
+  const corp=document.getElementById('dart-corp').value.trim();
+  if(!corp)return;
+  const v=val(corp);if(!v.ok){document.getElementById('dart-result').innerHTML='<div class="emp"><p>🚫 보안 차단: '+v.r+'</p></div>';return;}
+  lBtn('dartbtn','조회 중...');
+  document.getElementById('dart-result').innerHTML='<div class="emp"><div class="emp-icon">🏢</div><p>DART 기업공시 조회 중...</p></div>';
+  try{
+    const data=await apiFetch('dart/search',{corp_name:corp});
+    let h=`<div style="font-size:var(--fs-l);font-weight:700;color:#C9A84C;margin-bottom:16px">🏢 ${san(data.corp_name||corp)}</div>`;
+    if(data.corp_info&&Object.keys(data.corp_info).length>0){
+      const ci=data.corp_info;
+      h+=`<div class="blk" style="border-color:#2A2A1A;margin-bottom:12px">
+        <div style="font-size:var(--fs);font-weight:700;color:#C9A84C;margin-bottom:10px">📋 기업 기본정보</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:var(--fs-s)">
+          ${ci.corp_name?`<div><span style="color:#666">기업명</span><div style="color:#CCC;font-weight:700">${san(ci.corp_name)}</div></div>`:''}
+          ${ci.stock_code?`<div><span style="color:#666">종목코드</span><div style="color:#00FF88">${san(ci.stock_code)}</div></div>`:''}
+          ${ci.ceo_nm?`<div><span style="color:#666">대표이사</span><div style="color:#CCC">${san(ci.ceo_nm)}</div></div>`:''}
+          ${ci.corp_cls?`<div><span style="color:#666">법인구분</span><div style="color:#AAF">${san(ci.corp_cls==='Y'?'유가증권':ci.corp_cls==='K'?'코스닥':ci.corp_cls==='N'?'코넥스':'기타')}</div></div>`:''}
+          ${ci.jurir_no?`<div><span style="color:#666">법인등록번호</span><div style="color:#CCC">${san(ci.jurir_no)}</div></div>`:''}
+          ${ci.bizr_no?`<div><span style="color:#666">사업자번호</span><div style="color:#CCC">${san(ci.bizr_no)}</div></div>`:''}
+          ${ci.adres?`<div style="grid-column:span 2"><span style="color:#666">주소</span><div style="color:#CCC">${san(ci.adres)}</div></div>`:''}
+          ${ci.hm_url?`<div style="grid-column:span 2"><span style="color:#666">홈페이지</span><div><a href="${san(ci.hm_url)}" target="_blank" style="color:#4AF">${san(ci.hm_url)}</a></div></div>`:''}
+        </div>
+      </div>`;
+    }
+    if(data.corp_list&&data.corp_list.length>1){
+      h+='<div class="st" style="color:#888">검색된 기업 목록</div>';
+      data.corp_list.forEach(c=>{
+        h+=`<div class="blk" style="border-color:#1A1A2A;padding:8px 12px;cursor:pointer" onclick="document.getElementById('dart-corp').value='${san(c.corp_name||'')}';runDart()">
+          <span style="color:#AAF;font-weight:700">${san(c.corp_name||'')}</span>
+          <span style="color:#555;font-size:var(--fs-xs);margin-left:8px">${san(c.stock_code||'')} · ${san(c.modify_date||'')}</span>
+        </div>`;
+      });
+    }
+    if(data.disclosures&&data.disclosures.length){
+      h+=`<div class="st" style="margin-top:16px;color:var(--gr)">📄 최근 공시 ${data.total_disclosures}건</div>`;
+      data.disclosures.forEach(d=>{
+        h+=`<div class="blk" style="border-color:#1A3A1A;padding:10px 14px">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap">
+            <div style="flex:1">
+              <div style="font-size:var(--fs);color:#CCC;margin-bottom:4px">${san(d.report_nm||'')}</div>
+              <div style="font-size:var(--fs-xs);color:#555">${san(d.rcept_dt||'')} · ${san(d.flr_nm||'')} · ${san(d.rm||'')}</div>
+            </div>
+            <a href="https://dart.fss.or.kr/dsaf001/main.do?rcpNo=${san(d.rcept_no||'')}" target="_blank"
+               style="font-size:var(--fs-xs);background:#1A3A1A;color:#00FF88;padding:5px 10px;border-radius:5px;text-decoration:none;white-space:nowrap">DART 보기</a>
+          </div>
+        </div>`;
+      });
+    } else if(data.dart_configured){
+      h+='<div class="emp" style="margin-top:12px"><p style="color:#888">공시 데이터가 없거나 비상장기업입니다<br><span style="font-size:var(--fs-xs)">DART에 등록된 상장기업명을 정확히 입력하세요</span></p></div>';
+    }
+    h+=`<div style="font-size:var(--fs-xs);color:#333;margin-top:12px;text-align:right">출처: 금융감독원 DART 전자공시시스템</div>`;
+    document.getElementById('dart-result').innerHTML=h;
+  }catch(e){document.getElementById('dart-result').innerHTML=`<div class="emp"><p>조회 오류: ${san(e.message)}</p></div>`;}
+  rBtn('dartbtn','🏢 공시 조회');
+}
+
+async function runBiz(){
+  const bno=document.getElementById('biz-no').value.trim().replace(/[^0-9]/g,'');
+  if(!bno||bno.length!==10){document.getElementById('biz-result').innerHTML='<div class="emp"><p>⚠ 사업자등록번호 10자리를 입력하세요</p></div>';return;}
+  lBtn('bizbtn','조회 중...');
+  document.getElementById('biz-result').innerHTML='<div class="emp"><div class="emp-icon">🔎</div><p>국세청 조회 중...</p></div>';
+  try{
+    const r=await fetch(`${API}/api/business/check`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({b_no:bno})});
+    const data=await r.json();
+    if(data.error){document.getElementById('biz-result').innerHTML=`<div class="emp"><p>⚠ ${san(data.error)}</p></div>`;rBtn('bizbtn','🔎 조회');return;}
+    const sttColor=data.b_stt_cd==='01'?'#00FF88':data.b_stt_cd==='02'?'#FFA500':'#FF5555';
+    const sttIcon=data.b_stt_cd==='01'?'✅':data.b_stt_cd==='02'?'⏸':'❌';
+    let h=`<div class="blk" style="border-color:${sttColor}33">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px">
+        <div style="font-size:var(--fs-l);font-weight:700;color:#C9A84C">🔎 ${san(data.b_no_formatted||bno)}</div>
+        <div style="font-size:var(--fs);font-weight:700;color:${sttColor};background:${sttColor}22;padding:6px 16px;border-radius:20px">${sttIcon} ${san(data.b_stt||'')}</div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;font-size:var(--fs-s)">
+        <div><div style="color:#555;font-size:var(--fs-xs);margin-bottom:3px">사업자번호</div><div style="color:#CCC;font-weight:700">${san(data.b_no_formatted||'')}</div></div>
+        <div><div style="color:#555;font-size:var(--fs-xs);margin-bottom:3px">사업 상태</div><div style="color:${sttColor};font-weight:700">${san(data.b_stt||'')}</div></div>
+        <div><div style="color:#555;font-size:var(--fs-xs);margin-bottom:3px">과세유형</div><div style="color:#AAF">${san(data.tax_type||'')}</div></div>
+        ${data.end_dt?`<div><div style="color:#555;font-size:var(--fs-xs);margin-bottom:3px">폐업일자</div><div style="color:#FF5555">${san(data.end_dt)}</div></div>`:'<div></div>'}
+        ${data.utcc_yn?`<div><div style="color:#555;font-size:var(--fs-xs);margin-bottom:3px">단위과세전환</div><div style="color:#CCC">${san(data.utcc_yn)}</div></div>`:''}
+        ${data.invoice_apply_dt?`<div><div style="color:#555;font-size:var(--fs-xs);margin-bottom:3px">전자세금계산서 적용일</div><div style="color:#CCC">${san(data.invoice_apply_dt)}</div></div>`:''}
+      </div>
+      ${data.b_stt_cd==='01'?'<div style="margin-top:12px;padding:8px 12px;background:rgba(0,255,136,.05);border-radius:6px;font-size:var(--fs-xs);color:#00FF88">✅ 정상 영업중인 사업자입니다</div>':
+        data.b_stt_cd==='02'?'<div style="margin-top:12px;padding:8px 12px;background:rgba(255,165,0,.05);border-radius:6px;font-size:var(--fs-xs);color:#FFA500">⏸ 현재 휴업 중인 사업자입니다</div>':
+        '<div style="margin-top:12px;padding:8px 12px;background:rgba(255,85,85,.05);border-radius:6px;font-size:var(--fs-xs);color:#FF5555">❌ 폐업된 사업자입니다. 거래 시 주의하세요</div>'}
+    </div>
+    <div style="font-size:var(--fs-xs);color:#333;margin-top:8px;text-align:right">출처: ${san(data.source||'국세청')}</div>`;
+    document.getElementById('biz-result').innerHTML=h;
+  }catch(e){document.getElementById('biz-result').innerHTML=`<div class="emp"><p>조회 오류: ${san(e.message)}</p></div>`;}
+  rBtn('bizbtn','🔎 조회');
+}
+
+async function runBizValidate(){
+  const bno=document.getElementById('biz-no2').value.trim().replace(/[^0-9]/g,'');
+  if(!bno||bno.length!==10){alert('사업자등록번호 10자리를 입력하세요');return;}
+  lBtn('bizbtn2','확인 중...');
+  try{
+    const r=await fetch(`${API}/api/business/validate`,{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({b_no:bno,p_nm:document.getElementById('biz-pnm').value.trim(),
+        b_nm:document.getElementById('biz-bnm').value.trim(),start_dt:document.getElementById('biz-sdt').value.trim()})});
+    const data=await r.json();
+    const items=data.data||[];
+    if(!items.length){document.getElementById('biz-result').innerHTML='<div class="emp"><p>진위확인 결과 없음</p></div>';rBtn('bizbtn2','🔍 진위확인');return;}
+    const item=items[0];
+    const valid=item.valid==='02';
+    let h=`<div class="blk" style="border-color:${valid?'#00FF8833':'#FF555533'}">
+      <div style="font-size:var(--fs-l);font-weight:700;color:${valid?'#00FF88':'#FF5555'};margin-bottom:12px">
+        ${valid?'✅ 진위확인 일치':'❌ 진위확인 불일치'}
+      </div>
+      <div style="font-size:var(--fs-s);color:#888;line-height:1.9">
+        <div>사업자번호: <span style="color:#CCC">${san(bno.replace(/(\d{3})(\d{2})(\d{5})/,'$1-$2-$3'))}</span></div>
+        <div>확인결과: <span style="color:${valid?'#00FF88':'#FF5555'};font-weight:700">${san(item.valid==='01'?'확인 불가':item.valid==='02'?'일치':'불일치')}</span></div>
+      </div>
+    </div>`;
+    document.getElementById('biz-result').innerHTML=h;
+  }catch(e){document.getElementById('biz-result').innerHTML=`<div class="emp"><p>오류: ${san(e.message)}</p></div>`;}
+  rBtn('bizbtn2','🔍 진위확인');
+}
+
 </script>
 </body>
 </html>
