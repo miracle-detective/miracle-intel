@@ -23,6 +23,8 @@ NAVER_CLIENT_SECRET = os.getenv("NAVER_CLIENT_SECRET", "")
 KAKAO_API_KEY       = os.getenv("KAKAO_API_KEY", "")
 GOOGLE_API_KEY      = os.getenv("GOOGLE_API_KEY", "")
 GOOGLE_CSE_ID       = os.getenv("GOOGLE_CSE_ID", "")
+DART_API_KEY        = os.getenv("DART_API_KEY", "")
+DATA_API_KEY        = os.getenv("DATA_API_KEY", "")
 
 GROQ_MODEL      = "llama-3.3-70b-versatile"
 GEMINI_MODEL    = "gemini-2.5-flash-preview-05-20"
@@ -53,6 +55,14 @@ class OsintRequest(BaseModel):
 
 class SimpleRequest(BaseModel):
     query: str
+
+class DartRequest(BaseModel):
+    corp_name: str = ""
+    corp_code: str = ""
+    report_type: str = "all"
+
+class BizRequest(BaseModel):
+    b_no: str  # 사업자등록번호 10자리 (하이픈 없이)
 
 class LawRequest(BaseModel):
     query: str
@@ -219,6 +229,133 @@ async def search_google(query: str, num: int = 10, start: int = 1) -> list:
                 })
             return results
     except: return []
+
+# ─── DART 금감원 기업공시 ─────────────────────────────────────────
+async def search_dart_corp(corp_name: str) -> dict:
+    """DART 기업코드 조회"""
+    if not DART_API_KEY: return {}
+    url = "https://opendart.fss.or.kr/api/company.json"
+    params = {"crtfc_key": DART_API_KEY, "corp_name": corp_name, "page_no": 1, "page_count": 10}
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as c:
+            r = await c.get(url, params=params)
+            if r.status_code != 200: return {}
+            data = r.json()
+            if data.get("status") != "000": return {}
+            return data
+    except: return {}
+
+async def search_dart_disclosure(corp_code: str, bgn_de: str = "", end_de: str = "") -> dict:
+    """DART 공시 목록 조회"""
+    if not DART_API_KEY: return {}
+    url = "https://opendart.fss.or.kr/api/list.json"
+    params = {
+        "crtfc_key": DART_API_KEY,
+        "corp_code": corp_code,
+        "page_no": 1,
+        "page_count": 20,
+        "sort": "date",
+        "sort_mth": "desc"
+    }
+    if bgn_de: params["bgn_de"] = bgn_de
+    if end_de: params["end_de"] = end_de
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as c:
+            r = await c.get(url, params=params)
+            if r.status_code != 200: return {}
+            data = r.json()
+            if data.get("status") != "000": return {}
+            return data
+    except: return {}
+
+async def search_dart_company_info(corp_code: str) -> dict:
+    """DART 기업 기본정보 조회"""
+    if not DART_API_KEY: return {}
+    url = "https://opendart.fss.or.kr/api/company.json"
+    params = {"crtfc_key": DART_API_KEY, "corp_code": corp_code}
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as c:
+            r = await c.get(url, params=params)
+            if r.status_code != 200: return {}
+            data = r.json()
+            if data.get("status") != "000": return {}
+            return data
+    except: return {}
+
+# ─── 국세청 사업자등록정보 진위확인 ──────────────────────────────────
+async def check_business(b_no: str) -> dict:
+    """국세청 사업자등록 진위확인 및 상태조회"""
+    if not DATA_API_KEY: return {"error": "DATA_API_KEY 미설정"}
+    b_no_clean = re.sub(r'[^0-9]', '', b_no)
+    if len(b_no_clean) != 10:
+        return {"error": "사업자등록번호는 10자리 숫자여야 합니다"}
+    url = "https://api.odcloud.kr/api/nts-businessman/v1/status"
+    params = {"serviceKey": DATA_API_KEY}
+    payload = {"b_no": [b_no_clean]}
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as c:
+            r = await c.post(url, params=params, json=payload,
+                             headers={"Content-Type": "application/json"})
+            if r.status_code != 200:
+                return {"error": f"API 오류: {r.status_code}", "detail": r.text[:200]}
+            data = r.json()
+            items = data.get("data", [])
+            if not items:
+                return {"error": "조회 결과 없음", "raw": data}
+            item = items[0]
+            tax_type_map = {
+                "01": "일반과세자", "02": "간이과세자", "03": "면세사업자",
+                "04": "비영리법인", "05": "국가지방자치단체", "06": "면세사업자(공동사업자)",
+                "07": "영세율 등 조기환급", "08": "기타"
+            }
+            b_stt_map = {
+                "01": "계속사업자", "02": "휴업자", "03": "폐업자"
+            }
+            return {
+                "b_no": b_no_clean,
+                "b_no_formatted": f"{b_no_clean[:3]}-{b_no_clean[3:5]}-{b_no_clean[5:]}",
+                "b_stt": b_stt_map.get(item.get("b_stt_cd", ""), item.get("b_stt", "알 수 없음")),
+                "b_stt_cd": item.get("b_stt_cd", ""),
+                "tax_type": tax_type_map.get(item.get("tax_type_cd", ""), item.get("tax_type", "알 수 없음")),
+                "tax_type_cd": item.get("tax_type_cd", ""),
+                "end_dt": item.get("end_dt", ""),
+                "utcc_yn": item.get("utcc_yn", ""),
+                "tax_type_change_dt": item.get("tax_type_change_dt", ""),
+                "invoice_apply_dt": item.get("invoice_apply_dt", ""),
+                "rbf_tax_type": item.get("rbf_tax_type", ""),
+                "rbf_tax_type_cd": item.get("rbf_tax_type_cd", ""),
+                "status": "정상조회",
+                "source": "국세청 사업자등록정보 진위확인 API"
+            }
+    except Exception as e:
+        return {"error": f"요청 실패: {str(e)}"}
+
+async def validate_business(b_no: str, p_nm: str = "", p_nm2: str = "",
+                            b_nm: str = "", start_dt: str = "") -> dict:
+    """국세청 사업자등록 진위확인 (상세)"""
+    if not DATA_API_KEY: return {"error": "DATA_API_KEY 미설정"}
+    b_no_clean = re.sub(r'[^0-9]', '', b_no)
+    url = "https://api.odcloud.kr/api/nts-businessman/v1/validate"
+    params = {"serviceKey": DATA_API_KEY}
+    payload = {"businesses": [{
+        "b_no": b_no_clean,
+        "start_dt": start_dt,
+        "p_nm": p_nm,
+        "p_nm2": p_nm2,
+        "b_nm": b_nm,
+        "corp_no": "",
+        "b_sector": "",
+        "b_type": ""
+    }]}
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as c:
+            r = await c.post(url, params=params, json=payload,
+                             headers={"Content-Type": "application/json"})
+            if r.status_code != 200:
+                return {"error": f"API 오류: {r.status_code}"}
+            return r.json()
+    except Exception as e:
+        return {"error": f"요청 실패: {str(e)}"}
 
 # ─── 통합 검색 (모든 소스 병렬) ─────────────────────────────────
 async def search_all(query: str, display: int = 20) -> dict:
@@ -446,6 +583,101 @@ async def report(req: ReportRequest):
         system, 2000)
     return {"report": text}
 
+# ─── DART 기업공시 엔드포인트 ──────────────────────────────────────
+
+@app.post("/api/dart/search")
+async def dart_search(req: DartRequest):
+    """DART 기업 검색 + 공시 목록 통합 조회"""
+    if not DART_API_KEY:
+        raise HTTPException(500, "DART_API_KEY 미설정")
+    if not req.corp_name and not req.corp_code:
+        raise HTTPException(400, "기업명 또는 기업코드를 입력하세요")
+
+    corp_code = req.corp_code
+    corp_info = {}
+    corp_list = []
+
+    # 기업명으로 검색
+    if req.corp_name and not corp_code:
+        result = await search_dart_corp(req.corp_name)
+        corp_list = result.get("list", [])
+        if corp_list:
+            corp_code = corp_list[0].get("corp_code", "")
+            corp_info = corp_list[0]
+
+    # 기업코드로 상세정보 조회
+    if corp_code:
+        info_result = await search_dart_company_info(corp_code)
+        if info_result:
+            corp_info = info_result
+
+    # 공시 목록 조회
+    disclosures = []
+    if corp_code:
+        disc_result = await search_dart_disclosure(corp_code)
+        disclosures = disc_result.get("list", [])
+
+    return {
+        "corp_name": req.corp_name,
+        "corp_code": corp_code,
+        "corp_info": corp_info,
+        "corp_list": corp_list[:5],
+        "disclosures": disclosures[:20],
+        "total_disclosures": len(disclosures),
+        "source": "금융감독원 DART 전자공시시스템",
+        "dart_configured": bool(DART_API_KEY)
+    }
+
+@app.get("/api/dart/company/{corp_code}")
+async def dart_company(corp_code: str):
+    """DART 기업 기본정보 조회"""
+    if not DART_API_KEY:
+        raise HTTPException(500, "DART_API_KEY 미설정")
+    info = await search_dart_company_info(corp_code)
+    disclosures_raw = await search_dart_disclosure(corp_code)
+    disclosures = disclosures_raw.get("list", [])
+    return {
+        "corp_code": corp_code,
+        "info": info,
+        "recent_disclosures": disclosures[:10],
+        "source": "금융감독원 DART"
+    }
+
+# ─── 국세청 사업자 조회 엔드포인트 ─────────────────────────────────
+
+@app.post("/api/business/check")
+async def business_check(req: BizRequest):
+    """국세청 사업자등록 상태조회"""
+    if not DATA_API_KEY:
+        raise HTTPException(500, "DATA_API_KEY 미설정")
+    result = await check_business(req.b_no)
+    return result
+
+@app.post("/api/business/validate")
+async def business_validate(req: dict):
+    """국세청 사업자등록 진위확인 (상세)"""
+    if not DATA_API_KEY:
+        raise HTTPException(500, "DATA_API_KEY 미설정")
+    b_no    = req.get("b_no", "")
+    p_nm    = req.get("p_nm", "")
+    p_nm2   = req.get("p_nm2", "")
+    b_nm    = req.get("b_nm", "")
+    start_dt = req.get("start_dt", "")
+    if not b_no:
+        raise HTTPException(400, "사업자등록번호를 입력하세요")
+    result = await validate_business(b_no, p_nm, p_nm2, b_nm, start_dt)
+    return result
+
+@app.get("/api/business/status")
+async def business_api_status():
+    """사업자 API 상태 확인"""
+    return {
+        "dart_configured": bool(DART_API_KEY),
+        "data_configured": bool(DATA_API_KEY),
+        "dart_key_preview": DART_API_KEY[:8] + "..." if DART_API_KEY else "미설정",
+        "data_key_preview": DATA_API_KEY[:8] + "..." if DATA_API_KEY else "미설정",
+    }
+
 if __name__ == "__main__":
     import uvicorn
     print("="*60)
@@ -456,6 +688,8 @@ if __name__ == "__main__":
     print(f"  네이버:  {'OK' if NAVER_CLIENT_ID else '미설정'}")
     print(f"  카카오:  {'OK' if KAKAO_API_KEY else '미설정'}")
     print(f"  구글:    {'OK' if GOOGLE_API_KEY else '미설정'}")
+    print(f"  DART:    {'OK' if DART_API_KEY else '미설정'}")
+    print(f"  사업자:  {'OK' if DATA_API_KEY else '미설정'}")
     print(f"  서버:    http://localhost:8000")
     print("="*60)
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True, log_level="warning")
