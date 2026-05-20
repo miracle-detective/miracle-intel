@@ -230,12 +230,28 @@ table{width:100%;border-collapse:collapse;min-width:520px}
         <div class="st" style="color:#FAA">사건 정보</div>
         <div class="fld"><label class="lbl">사건번호</label><input id="cl-caseid" class="inp" placeholder="MIR-2601"></div>
         <div class="fld"><label class="lbl">조사 기간</label><input id="cl-period" class="inp" placeholder="2026.05.01 ~ 2026.05.07"></div>
-        <div class="fld"><label class="lbl">조사 대상</label><input id="cl-target" class="inp" placeholder="조사 대상자 또는 사안"></div>
+        <div class="fld"><label class="lbl">조사 대상</label><input id="cl-target" class="inp" placeholder="조사 대상자명"></div>
+        <div class="fld"><label class="lbl">대상자 주소</label><input id="cl-target-addr" class="inp" placeholder="대상자 주소 (알고있을 경우)"></div>
+        <div class="fld"><label class="lbl">대상자 연락처</label><input id="cl-target-tel" class="inp" placeholder="대상자 연락처 (알고있을 경우)"></div>
+        <div class="fld"><label class="lbl">차량번호</label><input id="cl-vehicle" class="inp" placeholder="차량번호 (알고있을 경우)"></div>
+        <div class="fld"><label class="lbl">긴급도</label><select id="cl-priority" class="inp"><option>일반</option><option>긴급</option><option>최긴급</option></select></div>
         <div class="fld"><label class="lbl">조사 목적</label><input id="cl-purpose" class="inp" placeholder="증거 수집 / 소재 확인 등"></div>
       </div>
     </div>
     <div class="fld"><label class="lbl">의뢰 내용 (상세)</label><textarea id="cl-detail" class="inp" rows="4" placeholder="의뢰인이 요청한 조사 내용을 상세히 입력하세요..."></textarea></div>
     <div class="fld"><label class="lbl">조사 결과 (AI 생성 또는 직접 입력)</label><textarea id="cl-result" class="inp" rows="6" placeholder="AI 보고서 생성 버튼을 누르거나 직접 입력하세요..."></textarea></div>
+    <div class="fld"><label class="lbl">수집 증거 목록</label><textarea id="cl-evidence" class="inp" rows="3" placeholder="예) 2026.05.01 현장사진 5매, CCTV 영상 1건, 목격자 진술서 1부..."></textarea></div>
+    <div class="fld"><label class="lbl">적용 법령</label><input id="cl-legal" class="inp" placeholder="예) 탐정업법 제4조, 개인정보보호법 제58조 (공익목적 예외)"></div>
+    <div class="fld"><label class="lbl">담당 탐정</label><input id="cl-investigator" class="inp" value="최다슬" placeholder="담당 탐정명"></div>
+    <div style="margin-top:16px;border-top:1px solid #1A1A1A;padding-top:14px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <div style="font-size:13px;font-weight:700;color:#C9A84C">📁 저장된 보고서</div>
+        <button onclick="loadSavedReports()" style="background:#1A1A1A;border:1px solid #2A2A2A;color:#888;padding:4px 10px;border-radius:5px;font-size:11px;cursor:pointer">🔄 새로고침</button>
+      </div>
+      <div id="saved-reports-list" style="max-height:200px;overflow-y:auto;background:#0A0A0A;border:1px solid #1A1A1A;border-radius:6px">
+        <div style="color:#444;font-size:12px;padding:8px">저장된 보고서 없음</div>
+      </div>
+    </div>
     <div id="cl-prev" style="display:none;background:#0A0A0A;border:1px solid var(--gd);border-radius:10px;padding:18px;margin-top:16px">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px">
         <div class="st" style="margin:0">📋 보고서 미리보기</div>
@@ -320,6 +336,7 @@ table{width:100%;border-collapse:collapse;min-width:520px}
         <span style="color:#4A90E2">● 구글 웹검색</span>
       </div>
       <div style="display:flex;gap:10px;margin-bottom:10px;flex-wrap:wrap">
+        <div id="search-history" style="margin-bottom:8px;min-height:0"></div>
         <input id="sq" class="inp" placeholder="검색할 키워드 입력 (제한 없음)" onkeydown="if(event.key==='Enter')runSearch()" style="flex:1;min-width:200px">
         <select id="s-display" class="inp" style="width:100px;flex-shrink:0">
           <option value="10">10건</option>
@@ -495,6 +512,104 @@ table{width:100%;border-collapse:collapse;min-width:520px}
 const API=window.location.origin;
 const SD={b:0,d:0,r:0},RL={w:10000,max:5,c:[]};
 let CH=[],cases=[],caseSeq=1,mediaCount=0;
+
+// ═══════════════════════════════════════════════
+// 영구 저장 시스템 (localStorage 기반)
+// ═══════════════════════════════════════════════
+const STORE = {
+  save(key, val){ try{localStorage.setItem('MI_'+key, JSON.stringify(val));}catch(e){} },
+  load(key, def=null){ try{const v=localStorage.getItem('MI_'+key);return v?JSON.parse(v):def;}catch(e){return def;} },
+  del(key){ try{localStorage.removeItem('MI_'+key);}catch(e){} },
+  keys(prefix=''){ try{return Object.keys(localStorage).filter(k=>k.startsWith('MI_'+prefix)).map(k=>k.replace('MI_',''));}catch(e){return [];} }
+};
+
+// 사건 목록 영구 저장 복원
+function initStorage(){
+  const saved = STORE.load('cases', []);
+  if(saved.length){ cases=saved; caseSeq=saved.length+1; RC(); }
+  const savedSearch = STORE.load('search_history', []);
+  if(savedSearch.length) renderSearchHistory(savedSearch);
+  loadSavedReports();
+}
+
+// 사건 저장
+function saveCases(){ STORE.save('cases', cases); }
+
+// 보고서 저장
+function saveReport(data){
+  const reports = STORE.load('reports', []);
+  const report = {
+    id: data.case_id || 'MIR-'+Date.now().toString().slice(-4),
+    client: data.client_name || '',
+    content: data.report || '',
+    created_at: data.created_at || new Date().toLocaleDateString('ko-KR'),
+    saved_at: new Date().toISOString()
+  };
+  // 중복 방지
+  const idx = reports.findIndex(r=>r.id===report.id);
+  if(idx>=0) reports[idx]=report; else reports.unshift(report);
+  STORE.save('reports', reports.slice(0,50)); // 최대 50건
+  loadSavedReports();
+}
+
+// 저장된 보고서 목록 렌더링
+function loadSavedReports(){
+  const reports = STORE.load('reports', []);
+  const el = document.getElementById('saved-reports-list');
+  if(!el) return;
+  if(!reports.length){ el.innerHTML='<div style="color:#444;font-size:12px;padding:8px">저장된 보고서 없음</div>'; return; }
+  el.innerHTML = reports.map((r,i)=>`
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 10px;border-bottom:1px solid #1A1A1A;cursor:pointer" onclick="loadReport(${i})">
+      <div>
+        <div style="font-size:13px;color:#C9A84C;font-weight:700">${san(r.id)}</div>
+        <div style="font-size:11px;color:#666">${san(r.client)} · ${san(r.created_at)}</div>
+      </div>
+      <button onclick="event.stopPropagation();deleteReport(${i})" style="background:#2A0A0A;border:1px solid #FF4444;color:#FF4444;padding:3px 8px;border-radius:4px;font-size:11px;cursor:pointer">삭제</button>
+    </div>`).join('');
+}
+
+function loadReport(i){
+  const reports = STORE.load('reports', []);
+  const r = reports[i];
+  if(!r) return;
+  document.getElementById('cl-result').value = r.content;
+  document.getElementById('cl-caseid').value = r.id;
+  if(document.getElementById('cl-name')) document.getElementById('cl-name').value = r.client;
+  buildPrint();
+  alert('보고서 ['+r.id+'] 불러오기 완료');
+}
+
+function deleteReport(i){
+  if(!confirm('이 보고서를 삭제하시겠습니까?')) return;
+  const reports = STORE.load('reports', []);
+  reports.splice(i,1);
+  STORE.save('reports', reports);
+  loadSavedReports();
+}
+
+// 검색 기록 저장
+function saveSearchHistory(query){
+  if(!query || query.length < 2) return;
+  const history = STORE.load('search_history', []);
+  const filtered = history.filter(h=>h!==query);
+  filtered.unshift(query);
+  STORE.save('search_history', filtered.slice(0,30)); // 최대 30건
+  renderSearchHistory(filtered);
+}
+
+function renderSearchHistory(history){
+  const el = document.getElementById('search-history');
+  if(!el) return;
+  el.innerHTML = history.slice(0,10).map(q=>`
+    <span onclick="QS('${san(q)}')" style="display:inline-block;padding:3px 10px;background:#1A1A1A;border:1px solid #2A2A2A;border-radius:12px;font-size:11px;color:#888;cursor:pointer;margin:2px">${san(q)}</span>
+  `).join('');
+}
+
+function clearSearchHistory(){
+  STORE.del('search_history');
+  const el=document.getElementById('search-history');
+  if(el) el.innerHTML='';
+}
 const FI=[{id:1,cat:'장치 분석',label:'스마트폰 데이터 추출',done:false},{id:2,cat:'장치 분석',label:'PC·노트북 하드드라이브 이미징',done:false},{id:3,cat:'장치 분석',label:'USB·외장하드 증거 수집',done:false},{id:4,cat:'네트워크 분석',label:'IP 주소 추적 및 로그 분석',done:false},{id:5,cat:'네트워크 분석',label:'이메일 헤더 분석',done:false},{id:6,cat:'SNS 분석',label:'소셜미디어 계정 아카이빙',done:false},{id:7,cat:'문서 분석',label:'메타데이터 추출 및 분석',done:false},{id:8,cat:'문서 분석',label:'문서 위변조 여부 검토',done:false},{id:9,cat:'영상 분석',label:'CCTV·블랙박스 영상 확보',done:false},{id:10,cat:'영상 분석',label:'영상 타임스탬프 검증',done:false}].map(i=>({...i,cat:i.cat.replace(/분석/g,'분석')}));
 const XP=/(<script|javascript:|on\w+=|<iframe|alert\(|eval\()/gi,NP=/(union\s+select|drop\s+table|exec\s*\(|--|or\s+1=1)/gi,PP=/(ignore\s+(previous|all)\s+instructions?|jailbreak|DAN\s+mode)/gi;
 function san(s){if(typeof s!=='string')return'';return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
@@ -511,11 +626,47 @@ function lBtn(id,t){const b=document.getElementById(id);if(b){b.disabled=true;b.
 function rBtn(id,t){const b=document.getElementById(id);if(b){b.disabled=false;b.textContent=t;}}
 function getYTId(url){if(!url)return null;const m=url.match(/(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/);return m?m[1]:null;}
 const PS={'긴급':['rgba(255,50,50,.1)','#FF5555'],'높음':['rgba(255,165,0,.1)','#FFA500'],'보통':['rgba(200,168,75,.1)','#C9A84C'],'낮음':['rgba(100,100,100,.08)','#888']};
-function addCase(){const t=document.getElementById('nt').value.trim();if(!t){document.getElementById('nt').style.borderColor='#FF4444';setTimeout(()=>document.getElementById('nt').style.borderColor='#2A2A2A',1500);return;}const v=val(t);if(!v.ok){alert('보안 차단: '+v.r);return;}const id=document.getElementById('ni').value.trim()||('MIR-26'+String(caseSeq++).padStart(2,'0'));cases.push({id,title:t,cat:document.getElementById('ncat').value||'미분류',priority:document.getElementById('npri').value,date:new Date().toLocaleDateString('ko-KR')});document.getElementById('nt').value='';document.getElementById('ni').value='';RC();}
-function deleteCase(i){if(!confirm('이 사건을 삭제하시겠습니까?'))return;cases.splice(i,1);RC();}
+function addCase(){const t=document.getElementById('nt').value.trim();if(!t){document.getElementById('nt').style.borderColor='#FF4444';setTimeout(()=>document.getElementById('nt').style.borderColor='#2A2A2A',1500);return;}const v=val(t);if(!v.ok){alert('보안 차단: '+v.r);return;}const id=document.getElementById('ni').value.trim()||('MIR-26'+String(caseSeq++).padStart(2,'0'));cases.push({id,title:t,cat:document.getElementById('ncat').value||'미분류',priority:document.getElementById('npri').value,date:new Date().toLocaleDateString('ko-KR')});document.getElementById('nt').value='';document.getElementById('ni').value='';RC();saveCases();}
+function deleteCase(i){if(!confirm('이 사건을 삭제하시겠습니까?'))return;cases.splice(i,1);RC();saveCases();}
 function resetCases(){if(!cases.length)return;if(!confirm('진행 사건을 전체 초기화하시겠습니까?'))return;cases=[];RC();}
 function RC(){const cc=document.getElementById('cc');if(cc)cc.textContent=cases.length;const empty=document.getElementById('empty'),tbl=document.getElementById('ctbl'),tbody=document.getElementById('ctbody');if(!tbody)return;if(!cases.length){if(empty)empty.style.display='block';if(tbl)tbl.style.display='none';tbody.innerHTML='';return;}if(empty)empty.style.display='none';if(tbl)tbl.style.display='table';tbody.innerHTML=cases.map((c,i)=>{const[pb,pc]=PS[c.priority]||PS['낮음'];return`<tr class="tr"><td class="td" style="color:#C9A84C;font-weight:700">${san(c.id)}</td><td class="td">${san(c.title)}</td><td class="td" style="color:#777">${san(c.cat)}</td><td class="td"><span class="bdg" style="background:${pb};color:${pc}">${c.priority}</span></td><td class="td" style="color:#555">${c.date}</td><td class="td"><button class="db" onclick="deleteCase(${i})" title="삭제">✕</button></td></tr>`;}).join('');}
-async function genCR(){const detail=document.getElementById('cl-detail').value.trim();const v=val(detail||'보고서');if(!v.ok){alert('보안 차단: '+v.r);return;}if(!chkRL()){alert('요청 제한: 잠시 후 재시도하세요');return;}lBtn('crb','보고서 생성 중...');try{const data=await apiFetch('report',{client_name:document.getElementById('cl-name').value,client_tel:document.getElementById('cl-tel').value,client_addr:document.getElementById('cl-addr').value,case_type:document.getElementById('cl-type').value,case_id:document.getElementById('cl-caseid').value||'MIR-'+Date.now().toString().slice(-4),period:document.getElementById('cl-period').value,target:document.getElementById('cl-target').value,purpose:document.getElementById('cl-purpose').value,detail:detail});document.getElementById('cl-result').value=data.report||'';buildPrint();const prev=document.getElementById('cl-prev');if(prev)prev.style.display='block';const pb=document.getElementById('cl-prev-body');if(pb)pb.textContent=data.report||'';}catch(e){alert('오류: '+e.message);}rBtn('crb','◆ AI 자동 생성');}
+async function genCR(){
+  const detail=document.getElementById('cl-detail').value.trim();
+  const v=val(detail||'보고서');
+  if(!v.ok){alert('보안 차단: '+v.r);return;}
+  if(!chkRL()){alert('요청 제한: 잠시 후 재시도하세요');return;}
+  lBtn('crb','보고서 정밀 생성 중...');
+  try{
+    const data=await apiFetch('report',{
+      client_name: document.getElementById('cl-name').value,
+      client_tel: document.getElementById('cl-tel').value,
+      client_addr: document.getElementById('cl-addr').value,
+      case_type: document.getElementById('cl-type').value,
+      case_id: document.getElementById('cl-caseid').value||'MIR-'+Date.now().toString().slice(-4),
+      period: document.getElementById('cl-period').value,
+      target: document.getElementById('cl-target').value,
+      target_addr: document.getElementById('cl-target-addr')?.value||'',
+      target_tel: document.getElementById('cl-target-tel')?.value||'',
+      target_vehicle: document.getElementById('cl-vehicle')?.value||'',
+      purpose: document.getElementById('cl-purpose').value,
+      detail: detail,
+      result: document.getElementById('cl-result').value||'',
+      evidence: document.getElementById('cl-evidence')?.value||'',
+      legal_basis: document.getElementById('cl-legal')?.value||'',
+      investigator: document.getElementById('cl-investigator')?.value||'최다슬',
+      priority: document.getElementById('cl-priority')?.value||'일반'
+    });
+    document.getElementById('cl-result').value=data.report||'';
+    buildPrint();
+    const prev=document.getElementById('cl-prev');
+    if(prev)prev.style.display='block';
+    const pb=document.getElementById('cl-prev-body');
+    if(pb)pb.textContent=data.report||'';
+    // 자동 저장
+    saveReport(data);
+  }catch(e){alert('오류: '+e.message);}
+  rBtn('crb','◆ AI 자동 생성');
+}
 function buildPrint(){const f={name:document.getElementById('cl-name').value,tel:document.getElementById('cl-tel').value,addr:document.getElementById('cl-addr').value,type:document.getElementById('cl-type').value,caseId:document.getElementById('cl-caseid').value||'MIR-'+Date.now().toString().slice(-4),period:document.getElementById('cl-period').value,target:document.getElementById('cl-target').value,purpose:document.getElementById('cl-purpose').value,detail:document.getElementById('cl-detail').value,result:document.getElementById('cl-result').value};const today=new Date().toLocaleDateString('ko-KR',{year:'numeric',month:'long',day:'numeric'});document.getElementById('pr-title').textContent='민간조사 보고서 ['+f.caseId+']';document.getElementById('pr-date').textContent='작성일: '+today+' | 보안등급: 기밀';document.getElementById('pr-meta').innerHTML=`<div><div style="color:#777;font-size:11px;margin-bottom:2px">의뢰인</div><div style="font-weight:600">${f.name||'-'}</div></div><div><div style="color:#777;font-size:11px;margin-bottom:2px">연락처</div><div>${f.tel||'-'}</div></div><div><div style="color:#777;font-size:11px;margin-bottom:2px">주소</div><div>${f.addr||'-'}</div></div><div><div style="color:#777;font-size:11px;margin-bottom:2px">의뢰 유형</div><div>${f.type}</div></div><div><div style="color:#777;font-size:11px;margin-bottom:2px">사건번호</div><div style="font-weight:600">${f.caseId}</div></div><div><div style="color:#777;font-size:11px;margin-bottom:2px">조사 기간</div><div>${f.period||'-'}</div></div><div><div style="color:#777;font-size:11px;margin-bottom:2px">조사 대상</div><div>${f.target||'-'}</div></div><div><div style="color:#777;font-size:11px;margin-bottom:2px">조사 목적</div><div>${f.purpose||'-'}</div></div>`;document.getElementById('pr-body').innerHTML=`<div style="margin-bottom:18px;page-break-inside:avoid"><div style="font-size:15px;font-weight:700;border-bottom:1px solid #000;padding-bottom:6px;margin-bottom:10px">■ 의뢰 내용</div><div style="font-size:13px;line-height:1.9;white-space:pre-wrap">${(f.detail||'-').replace(/</g,'&lt;')}</div></div><div style="margin-bottom:18px;page-break-inside:avoid"><div style="font-size:15px;font-weight:700;border-bottom:1px solid #000;padding-bottom:6px;margin-bottom:10px">■ 조사 결과 보고</div><div style="font-size:13px;line-height:1.9;white-space:pre-wrap">${(f.result||'-').replace(/</g,'&lt;')}</div></div><div style="page-break-inside:avoid"><div style="font-size:15px;font-weight:700;border-bottom:1px solid #000;padding-bottom:6px;margin-bottom:10px">■ 법적 고지</div><div style="font-size:13px;line-height:1.9">본 보고서는 대한민국 탐정업법 및 개인정보보호법에 따라 합법적으로 수집된 공개정보를 기반으로 작성되었습니다. 의뢰인 기밀 정보이며 제3자 공개를 금합니다.</div></div>`;}
 function doPrint(){buildPrint();const p=document.getElementById('printable');if(p)p.style.display='block';window.print();setTimeout(()=>{if(p)p.style.display='none';},2500);}
 function QL(q){document.getElementById('lawq').value=q;runLaw();}
@@ -1057,6 +1208,7 @@ function QS(q){ const e=document.getElementById('sq'); if(e)e.value=q; runSearch
 async function runSearch(){
   const q = (document.getElementById('sq')||{}).value?.trim();
   if(!q) return;
+  saveSearchHistory(q);
   const display = parseInt((document.getElementById('s-display')||{}).value||20);
   lBtn('sbtn','검색 중...');
 
@@ -1168,7 +1320,7 @@ function renderSearchResults(data, filter){
   document.getElementById('sr-result').innerHTML = h;
 }
 
-RC();RF();
+RC();RF();initStorage();
 
 async function runDart(){
   const corp=document.getElementById('dart-corp').value.trim();
