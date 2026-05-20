@@ -678,6 +678,239 @@ async def business_api_status():
         "data_key_preview": DATA_API_KEY[:8] + "..." if DATA_API_KEY else "미설정",
     }
 
+
+# ═══════════════════════════════════════════════════════════════
+# 신규 공공 API 함수 (DATA_API_KEY 공용)
+# ═══════════════════════════════════════════════════════════════
+
+# ─── 도로명주소 API ──────────────────────────────────────────────
+async def search_juso(keyword: str) -> dict:
+    """행정안전부 도로명주소 검색"""
+    if not JUSO_API_KEY: return {"error": "JUSO_API_KEY 미설정", "results": []}
+    url = "https://business.juso.go.kr/addrlink/addrLinkApi.do"
+    params = {"serviceKey": JUSO_API_KEY, "keyword": keyword, "resultType": "json", "countPerPage": 20, "currentPage": 1}
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as c:
+            r = await c.get(url, params=params)
+            data = r.json()
+            juso_list = data.get("results", {}).get("juso", [])
+            return {
+                "keyword": keyword,
+                "total": data.get("results", {}).get("common", {}).get("totalCount", 0),
+                "results": [{"roadAddr": j.get("roadAddr",""), "jibunAddr": j.get("jibunAddr",""),
+                    "zipNo": j.get("zipNo",""), "bdNm": j.get("bdNm",""),
+                    "siNm": j.get("siNm",""), "sggNm": j.get("sggNm",""), "emdNm": j.get("emdNm","")} for j in juso_list],
+                "source": "행정안전부 도로명주소 API"
+            }
+    except Exception as e: return {"error": str(e), "results": []}
+
+# ─── KIPRIS 특허청 API ───────────────────────────────────────────
+async def search_kipris(applicant: str) -> dict:
+    """특허청 출원인 특허·상표 검색"""
+    if not KIPRIS_API_KEY: return {"error": "KIPRIS_API_KEY 미설정", "patents": [], "trademarks": []}
+    import xml.etree.ElementTree as ET
+    patents, trademarks = [], []
+    async with httpx.AsyncClient(timeout=15.0) as c:
+        try:
+            r = await c.get("http://plus.kipris.or.kr/openapi/rest/patUtiModInfoSearchSevice/applicantNameSearchInfo",
+                params={"applicant": applicant, "accessKey": KIPRIS_API_KEY, "numOfRows": 20, "pageNo": 1, "sortSpec": "AD", "descSort": "true"})
+            root = ET.fromstring(r.text)
+            for item in root.findall(".//item"):
+                patents.append({"title": item.findtext("inventionTitle",""), "app_no": item.findtext("applicationNumber",""),
+                    "app_date": item.findtext("applicationDate",""), "applicant": item.findtext("applicantName",""),
+                    "status": item.findtext("registerStatus",""), "ipc": item.findtext("ipcNumber","")})
+        except: pass
+        try:
+            r2 = await c.get("http://plus.kipris.or.kr/openapi/rest/trademarkInfoSearchService/applicantNameSearchInfo",
+                params={"applicant": applicant, "accessKey": KIPRIS_API_KEY, "numOfRows": 20, "pageNo": 1})
+            root2 = ET.fromstring(r2.text)
+            for item in root2.findall(".//item"):
+                trademarks.append({"title": item.findtext("title",""), "app_no": item.findtext("applicationNumber",""),
+                    "app_date": item.findtext("applicationDate",""), "applicant": item.findtext("applicantName",""),
+                    "status": item.findtext("registerStatus","")})
+        except: pass
+    return {"applicant": applicant, "patents": patents, "trademarks": trademarks, "source": "특허청 KIPRIS"}
+
+# ─── 공정위 다단계판매사업자 API ──────────────────────────────────
+async def search_mlm(corp_name: str = "", rep_name: str = "") -> dict:
+    """공정거래위원회 다단계판매사업자 조회"""
+    if not DATA_API_KEY: return {"error": "DATA_API_KEY 미설정", "results": []}
+    url = "https://apis.data.go.kr/1130000/MvlBsIf_2Service/getMvlBsIfInfo_2"
+    params = {"serviceKey": DATA_API_KEY, "pageNo": 1, "numOfRows": 20, "type": "json"}
+    if corp_name: params["cmpnNm"] = corp_name
+    if rep_name: params["rprsntvNm"] = rep_name
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as c:
+            r = await c.get(url, params=params)
+            data = r.json()
+            items = data.get("response", {}).get("body", {}).get("items", {})
+            item_list = items.get("item", []) if items else []
+            if isinstance(item_list, dict): item_list = [item_list]
+            return {"query": corp_name or rep_name, "results": item_list, "total": len(item_list), "source": "공정위 다단계판매사업자 API"}
+    except Exception as e: return {"error": str(e), "results": []}
+
+# ─── 공정위 기업집단 소속회사 API ─────────────────────────────────
+async def search_conglomerate(group_name: str) -> dict:
+    """공정거래위원회 대기업집단 소속회사 조회"""
+    if not DATA_API_KEY: return {"error": "DATA_API_KEY 미설정", "results": []}
+    url = "https://apis.data.go.kr/1130000/appnGroupAffiList/appnGroupAffiListApi"
+    params = {"serviceKey": DATA_API_KEY, "pageNo": 1, "numOfRows": 50, "grpNm": group_name}
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as c:
+            r = await c.get(url, params=params)
+            import xml.etree.ElementTree as ET
+            root = ET.fromstring(r.text)
+            items = []
+            for item in root.findall(".//item"):
+                items.append({"grpNm": item.findtext("grpNm",""), "cmpnNm": item.findtext("cmpnNm",""),
+                    "bzno": item.findtext("bzno",""), "rprsntvNm": item.findtext("rprsntvNm",""),
+                    "estbDt": item.findtext("estbDt",""), "hmpgUrl": item.findtext("hmpgUrl","")})
+            return {"group_name": group_name, "results": items, "total": len(items), "source": "공정위 기업집단 소속회사 API"}
+    except Exception as e: return {"error": str(e), "results": []}
+
+# ─── 금융위 금융회사기본정보 API ──────────────────────────────────
+async def search_financial_company(corp_name: str = "", bizr_no: str = "") -> dict:
+    """금융위원회 금융회사 기본정보 조회"""
+    if not DATA_API_KEY: return {"error": "DATA_API_KEY 미설정", "results": []}
+    url = "https://apis.data.go.kr/1160100/service/GetFnCoBasInfoService/getFnCoOutl"
+    params = {"serviceKey": DATA_API_KEY, "pageNo": 1, "numOfRows": 20, "resultType": "json"}
+    if corp_name: params["itmsNm"] = corp_name
+    if bizr_no: params["bizrNo"] = bizr_no
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as c:
+            r = await c.get(url, params=params)
+            data = r.json()
+            items = data.get("response", {}).get("body", {}).get("items", {})
+            item_list = items.get("item", []) if items else []
+            if isinstance(item_list, dict): item_list = [item_list]
+            return {"query": corp_name or bizr_no, "results": item_list, "total": len(item_list), "source": "금융위 금융회사기본정보 API"}
+    except Exception as e: return {"error": str(e), "results": []}
+
+# ─── 금융위 개인사업자금융정보 API ────────────────────────────────
+async def search_small_biz_finance(bizr_no: str) -> dict:
+    """금융위원회 개인사업자 금융정보 조회"""
+    if not DATA_API_KEY: return {"error": "DATA_API_KEY 미설정"}
+    url = "https://apis.data.go.kr/1160100/service/GetSBBankingInfoService/getGrnBalInfo"
+    params = {"serviceKey": DATA_API_KEY, "pageNo": 1, "numOfRows": 10, "resultType": "json", "bizrNo": bizr_no}
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as c:
+            r = await c.get(url, params=params)
+            data = r.json()
+            return {"bizr_no": bizr_no, "data": data.get("response", {}).get("body", {}), "source": "금융위 개인사업자금융정보 API"}
+    except Exception as e: return {"error": str(e)}
+
+# ─── 국토부 건축HUB 건축물대장 API ───────────────────────────────
+async def search_building_hub(addr: str) -> dict:
+    """국토교통부 건축HUB 건축물대장 조회"""
+    if not DATA_API_KEY: return {"error": "DATA_API_KEY 미설정", "results": []}
+    url = "https://apis.data.go.kr/1613000/BldRgstHubService/getBrTitleInfo"
+    params = {"serviceKey": DATA_API_KEY, "pageNo": 1, "numOfRows": 10, "addr": addr, "_type": "json"}
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as c:
+            r = await c.get(url, params=params)
+            data = r.json()
+            items = data.get("response", {}).get("body", {}).get("items", {})
+            item_list = items.get("item", []) if items else []
+            if isinstance(item_list, dict): item_list = [item_list]
+            return {"addr": addr, "results": item_list, "total": len(item_list), "source": "국토부 건축HUB 건축물대장 API"}
+    except Exception as e: return {"error": str(e), "results": []}
+
+# ─── 대상자 종합 OSINT 검색 ──────────────────────────────────────
+async def search_target_all(name: str, corp_name: str = "", b_no: str = "", address: str = "") -> dict:
+    """대상자 모든 정보 병렬 수집 - 통합 OSINT"""
+    tasks = [
+        search_naver(name, "news", 20),
+        search_naver(name, "blog", 20),
+        search_naver(name, "cafearticle", 20),
+        search_naver(name, "webkr", 20),
+        search_kakao(name, "web", 1, 20),
+        search_google(name, 10),
+        search_kipris(corp_name or name),
+        search_dart_corp(corp_name or name),
+        search_conglomerate(corp_name or name),
+        search_financial_company(corp_name or name),
+        search_mlm(corp_name or name),
+    ]
+    if b_no: tasks.append(check_business(b_no))
+    if address:
+        tasks.append(search_juso(address))
+        tasks.append(search_building_hub(address))
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+    def safe(r): return r if not isinstance(r, Exception) else {}
+    return {
+        "name": name, "corp_name": corp_name,
+        "naver_news": safe(results[0]) if isinstance(safe(results[0]), list) else [],
+        "naver_blog": safe(results[1]) if isinstance(safe(results[1]), list) else [],
+        "naver_cafe": safe(results[2]) if isinstance(safe(results[2]), list) else [],
+        "naver_web": safe(results[3]) if isinstance(safe(results[3]), list) else [],
+        "kakao_web": safe(results[4]) if isinstance(safe(results[4]), list) else [],
+        "google": safe(results[5]) if isinstance(safe(results[5]), list) else [],
+        "kipris": safe(results[6]),
+        "dart": safe(results[7]),
+        "conglomerate": safe(results[8]),
+        "financial_company": safe(results[9]),
+        "mlm": safe(results[10]),
+        "business": safe(results[11]) if b_no else {},
+        "juso": safe(results[12]) if address else {},
+        "building": safe(results[13]) if address else {},
+    }
+
+
+# ─── 신규 공공API 엔드포인트 ─────────────────────────────────────
+
+class TargetRequest(BaseModel):
+    name: str
+    corp_name: str = ""
+    b_no: str = ""
+    address: str = ""
+
+@app.post("/api/target/search")
+async def target_search(req: TargetRequest):
+    """대상자 종합 OSINT - 모든 공공DB 병렬 수집"""
+    if not req.name: raise HTTPException(400, "대상자명을 입력하세요")
+    return await search_target_all(req.name, req.corp_name, req.b_no, req.address)
+
+@app.post("/api/target/juso")
+async def target_juso(req: SimpleRequest):
+    """도로명주소 검색"""
+    return await search_juso(req.query)
+
+@app.post("/api/target/kipris")
+async def target_kipris(req: SimpleRequest):
+    """특허청 출원인 검색"""
+    return await search_kipris(req.query)
+
+@app.post("/api/target/mlm")
+async def target_mlm(req: SimpleRequest):
+    """공정위 다단계판매사업자 조회"""
+    return await search_mlm(corp_name=req.query)
+
+@app.post("/api/target/conglomerate")
+async def target_conglomerate(req: SimpleRequest):
+    """공정위 대기업집단 소속회사 조회"""
+    return await search_conglomerate(req.query)
+
+@app.post("/api/target/financial")
+async def target_financial(req: SimpleRequest):
+    """금융위 금융회사 기본정보 조회"""
+    return await search_financial_company(corp_name=req.query)
+
+@app.post("/api/target/building")
+async def target_building(req: SimpleRequest):
+    """국토부 건축HUB 건축물대장 조회"""
+    return await search_building_hub(req.query)
+
+@app.get("/api/target/status")
+async def target_status():
+    """신규 API 연동 상태"""
+    return {
+        "juso": bool(JUSO_API_KEY),
+        "kipris": bool(KIPRIS_API_KEY),
+        "data_apis": bool(DATA_API_KEY),
+        "dart": bool(DART_API_KEY),
+        "apis": ["다단계판매사업자", "기업집단소속회사", "금융회사기본정보", "건축물대장", "도로명주소", "특허청KIPRIS"]
+    }
+
 if __name__ == "__main__":
     import uvicorn
     print("="*60)
@@ -690,6 +923,9 @@ if __name__ == "__main__":
     print(f"  구글:    {'OK' if GOOGLE_API_KEY else '미설정'}")
     print(f"  DART:    {'OK' if DART_API_KEY else '미설정'}")
     print(f"  사업자:  {'OK' if DATA_API_KEY else '미설정'}")
+    print(f"  주소:    {'OK' if JUSO_API_KEY else '미설정'}")
+    print(f"  특허청:  {'OK' if KIPRIS_API_KEY else '미설정'}")
+    print(f"  공공DB:  {'OK' if DATA_API_KEY else '미설정'} (금융위·공정위·국토부 7종)")
     print(f"  서버:    http://localhost:8000")
     print("="*60)
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True, log_level="warning")
