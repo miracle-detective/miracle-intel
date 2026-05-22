@@ -85,16 +85,9 @@ class ReportRequest(BaseModel):
     case_id: str
     period: str = ""
     target: str = ""
-    target_addr: str = ""
-    target_tel: str = ""
-    target_vehicle: str = ""
     purpose: str = ""
     detail: str
     result: str = ""
-    evidence: str = ""
-    legal_basis: str = ""
-    investigator: str = "최다슬"
-    priority: str = "일반"
 
 # ─── AI 호출 ───────────────────────────────────────────────────
 async def call_ai(messages: list, system: str = "", max_tokens: int = 2000) -> str:
@@ -580,80 +573,15 @@ async def media(req: MediaRequest):
 
 @app.post("/api/report")
 async def report(req: ReportRequest):
-    import datetime
-    today = datetime.datetime.now().strftime("%Y년 %m월 %d일")
-    
-    system = """당신은 미라클탐정사무소(대표: 최다슬 탐정, 사업자번호: 220-88-00842)의 공식 민간조사 보고서 작성 전문 AI입니다.
-
-[작성 원칙]
-1. 대한민국 현행법(탐정업법·개인정보보호법·민법·형사소송법) 기반으로 작성
-2. 수집된 정보는 공개출처(OSINT) 기반 합법 조사 결과만 기재
-3. 육하원칙(누가·언제·어디서·무엇을·어떻게·왜) 철저히 준수
-4. 추측·가정·미확인 사항은 반드시 '[미확인]' 표기
-5. 법적 효력을 위해 객관적 사실만 기재, 주관적 판단 배제
-6. 전문 탐정 용어 사용, 격식체(~습니다) 유지
-7. 증거능력 확보를 위한 수집방법·일시·출처 명시
-
-[보고서 형식 - 반드시 아래 순서대로 작성]
-■ 제1조 사건 개요
-■ 제2조 조사 의뢰 내용
-■ 제3조 조사 대상자 정보
-■ 제4조 조사 방법 및 절차
-■ 제5조 조사 결과 (세부항목별 상세 기재)
-■ 제6조 수집 증거 목록
-■ 제7조 법적 검토 의견
-■ 제8조 결론 및 권고사항
-■ 제9조 법적 고지 및 면책조항
-
-각 항목을 충분히 상세하게 작성하고 절대 생략하지 마세요."""
-
-    user_content = f"""[보고서 작성 요청]
-작성일: {today}
-사건번호: {req.case_id}
-담당 탐정: {req.investigator} 탐정
-긴급도: {req.priority}
-
-[의뢰인 정보]
-- 성명: {req.client_name}
-- 연락처: {req.client_tel or '미기재'}
-- 주소: {req.client_addr or '미기재'}
-
-[조사 대상 정보]
-- 대상자명/특정정보: {req.target or '미기재'}
-- 대상 주소: {req.target_addr or '미기재'}
-- 대상 연락처: {req.target_tel or '미기재'}
-- 차량번호: {req.target_vehicle or '미기재'}
-
-[의뢰 내용]
-- 의뢰 유형: {req.case_type}
-- 조사 목적: {req.purpose or '미기재'}
-- 조사 기간: {req.period or '미기재'}
-- 상세 의뢰 내용: {req.detail}
-
-[조사 결과 원문]
-{req.result or '(결과 미입력 - AI가 의뢰 내용 기반으로 조사방법론 및 예상결과 작성)'}
-
-[수집 증거]
-{req.evidence or '(미입력)'}
-
-[적용 법령]
-{req.legal_basis or '탐정업법, 개인정보보호법, 민법, 형사소송법 기본 적용'}
-
-위 정보를 바탕으로 법원 제출 가능한 수준의 정밀하고 완전한 민간조사 보고서를 작성해주세요.
-각 조항을 빠짐없이 상세하게 작성하고, 법적 효력이 있는 전문 보고서 형식을 유지하세요."""
-
-    text = await call_ai(
-        [{"role": "user", "content": user_content}],
-        system,
-        4000  # 토큰 2000→4000으로 증가
-    )
-    return {
-        "report": text,
-        "case_id": req.case_id,
-        "client_name": req.client_name,
-        "created_at": today,
-        "investigator": req.investigator
-    }
+    system = (
+        "미라클탐정사무소(대표:최다슬 탐정) 공식 민간조사 보고서 작성 AI. "
+        "항목: 1.사건개요 2.조사의뢰 내용 3.조사방법 및 절차 4.조사결과 5.결론 및 권고사항. "
+        "전문적이고 상세하게 작성. 한국어로만.")
+    text = await call_ai([{"role":"user","content":
+        f"의뢰인:{req.client_name}\n사건번호:{req.case_id}\n유형:{req.case_type}\n"
+        f"대상:{req.target}\n기간:{req.period}\n목적:{req.purpose}\n내용:{req.detail}"}],
+        system, 2000)
+    return {"report": text}
 
 # ─── DART 기업공시 엔드포인트 ──────────────────────────────────────
 
