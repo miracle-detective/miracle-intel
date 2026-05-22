@@ -745,70 +745,179 @@ function QS(q){document.getElementById('sq').value=q;runSearch();}
 
 
 async function runSearch(){
-  const q=document.getElementById('sq').value.trim();if(!q)return;
-  const v=val(q);if(!v.ok){document.getElementById('sr-result').innerHTML=`<div class="emp"><p>🚫 ${v.r}</p></div>`;return;}
+  const q=document.getElementById('sq').value.trim();
+  if(!q)return;
+  const v=val(q);
+  if(!v.ok){document.getElementById('sr-result').innerHTML=`<div class="emp"><p>🚫 ${v.r}</p></div>`;return;}
   if(!chkRL()){document.getElementById('sr-result').innerHTML='<div class="emp"><p>⏱ 요청 제한</p></div>';return;}
-  lBtn('sbtn','검색 중...');
-  document.getElementById('sr-result').innerHTML='<div class="emp"><div class="emp-icon">🔍</div><p>네이버·카카오·구글 동시 검색 중...</p></div>';
+
+  saveSearchHistory(q);
+  lBtn('sbtn','수집 중...');
+
+  // 로딩 애니메이션 - 수집 진행상황 표시
+  document.getElementById('sr-result').innerHTML=`
+    <div class="emp" id="loading-status">
+      <div class="emp-icon">⚡</div>
+      <p style="color:#C9A84C;font-weight:700;font-size:15px">"${san(q)}" 전체 자동수집 시작</p>
+      <div style="margin-top:12px;font-size:12px;color:#555;line-height:2">
+        <div id="ld-1">🔄 네이버 6종 수집 중...</div>
+        <div id="ld-2">🔄 카카오 4종 수집 중...</div>
+        <div id="ld-3">🔄 구글 3페이지 수집 중...</div>
+        <div id="ld-4">🔄 DART 기업공시 조회 중...</div>
+        <div id="ld-5">🔄 특허청 KIPRIS 조회 중...</div>
+        <div id="ld-6">🔄 공정위·금융위·도로명주소 조회 중...</div>
+        <div id="ld-7">🔄 건축물대장·사업자 조회 중...</div>
+      </div>
+    </div>`;
+
+  // 순차 로딩 표시
+  const ldTimer = setInterval(()=>{
+    ['ld-1','ld-2','ld-3','ld-4','ld-5','ld-6','ld-7'].forEach((id,i)=>{
+      const el=document.getElementById(id);
+      if(el && el.textContent.startsWith('🔄')){
+        el.style.color='#C9A84C';
+        return false;
+      }
+    });
+  },500);
+
   try{
-    const data=await apiFetch('search',{query:q,search_type:'all'});
-    const total=data.total||0;
-    
+    // Python 백그라운드 전체 자동수집 실행
+    const data = await apiFetch('search',{query:q, search_type:'all', display:20});
+    clearInterval(ldTimer);
+
+    const total = data.total||0;
+    const pubCount = data.public_count||0;
+    const googleCount = data.google_count||(data.google||[]).length;
+
+    const nTotal = (data.naver_news||[]).length+(data.naver_web||[]).length+
+                   (data.naver_blog||[]).length+(data.naver_cafe||[]).length+
+                   (data.naver_doc||[]).length+(data.naver_kin||[]).length;
+    const kTotal = (data.kakao_news||[]).length+(data.kakao_web||[]).length+
+                   (data.kakao_blog||[]).length+(data.kakao_cafe||[]).length;
+
     // 통계 카드
     const stats=document.getElementById('sr-stats');
     stats.style.display='flex';
     stats.innerHTML=`
-      <div class="sc" style="border-left-color:#00FF88;padding:10px 14px;flex:1;min-width:100px"><div class="sl">총 수집</div><div class="sv" style="color:#00FF88;font-size:22px">${total}건</div></div>
-      <div class="sc" style="border-left-color:#00AA44;padding:10px 14px;flex:1;min-width:100px"><div class="sl">네이버</div><div class="sv" style="color:#00AA44;font-size:18px">${(data.naver_news||[]).length+(data.naver_web||[]).length+(data.naver_blog||[]).length}건</div></div>
-      <div class="sc" style="border-left-color:#FFCC00;padding:10px 14px;flex:1;min-width:100px"><div class="sl">카카오</div><div class="sv" style="color:#FFCC00;font-size:18px">${(data.kakao_news||[]).length+(data.kakao_web||[]).length+(data.kakao_blog||[]).length}건</div></div>
-      <div class="sc" style="border-left-color:#4A90E2;padding:10px 14px;flex:1;min-width:100px"><div class="sl">구글</div><div class="sv" style="color:#4A90E2;font-size:18px">${(data.google||[]).length}건</div></div>
+      <div class="sc" style="border-left-color:#C9A84C;padding:10px 14px;flex:1;min-width:90px"><div class="sl">총 수집</div><div class="sv" style="color:#C9A84C;font-size:22px">${total+pubCount}건</div></div>
+      <div class="sc" style="border-left-color:#00AA44;padding:10px 14px;flex:1;min-width:90px"><div class="sl">네이버</div><div class="sv" style="color:#00AA44;font-size:18px">${nTotal}건</div></div>
+      <div class="sc" style="border-left-color:#FFCC00;padding:10px 14px;flex:1;min-width:90px"><div class="sl">카카오</div><div class="sv" style="color:#FFCC00;font-size:18px">${kTotal}건</div></div>
+      <div class="sc" style="border-left-color:#4A90E2;padding:10px 14px;flex:1;min-width:90px"><div class="sl">구글</div><div class="sv" style="color:#4A90E2;font-size:18px">${googleCount}건</div></div>
+      <div class="sc" style="border-left-color:#C9A84C;padding:10px 14px;flex:1;min-width:90px"><div class="sl">공공DB</div><div class="sv" style="color:#C9A84C;font-size:18px">${pubCount}건</div></div>
     `;
 
     // 결과 렌더링
-    let h=`<div style="font-size:var(--fs-l);font-weight:700;color:var(--g);margin-bottom:16px">🔍 "${san(q)}" 통합검색 결과 ${total}건</div>`;
-    
+    let h=`<div style="font-size:var(--fs-l);font-weight:700;color:var(--g);margin-bottom:16px">
+      ⚡ "${san(q)}" 자동수집 완료 — 총 ${total+pubCount}건
+      <span style="font-size:11px;color:#555;font-weight:400;margin-left:8px">민간검색 ${total}건 + 공공DB ${pubCount}건</span>
+    </div>`;
+
     function renderItems(items, color, icon){
       if(!items||!items.length)return'';
       let s='';
       items.forEach(item=>{
+        const url=item.url||item.link||'';
         s+=`<div class="blk" style="border-left:3px solid ${color};margin-bottom:8px">
           <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px;flex-wrap:wrap;gap:4px">
-            <span style="font-size:var(--fs-xs);background:rgba(0,0,0,.3);color:${color};padding:2px 8px;border-radius:4px;font-weight:700">${icon} ${san(item.source)} ${san(item.type||'')}</span>
-            <span style="font-size:var(--fs-xs);color:#555">${san(item.date||'').slice(0,16)} ${san(item.publisher||'')}</span>
+            <span style="font-size:var(--fs-xs);background:rgba(0,0,0,.3);color:${color};padding:2px 8px;border-radius:4px;font-weight:700">${icon} ${san(item.source||'')} ${san(item.type||'')}</span>
+            <span style="font-size:var(--fs-xs);color:#555">${san((item.date||'').slice(0,16))} ${san(item.publisher||'')}</span>
           </div>
           <div style="font-size:var(--fs-s);font-weight:700;color:#DDD;margin-bottom:5px;line-height:1.5">${san(item.title||'')}</div>
           <div style="font-size:var(--fs-xs);color:#777;line-height:1.7;margin-bottom:6px">${san((item.description||'').slice(0,200))}</div>
-          ${item.url?`<a href="${san(item.url)}" target="_blank" style="font-size:var(--fs-xs);color:${color};text-decoration:none;word-break:break-all">🔗 ${san(item.url.slice(0,60))}...</a>`:''}
+          ${url?`<a href="${san(url)}" target="_blank" style="font-size:var(--fs-xs);color:${color};text-decoration:none;word-break:break-all">🔗 ${san(url.slice(0,70))}</a>`:''}
         </div>`;
       });
       return s;
     }
 
-    // 뉴스 섹션
+    function renderPublicDB(data2, color, icon, label){
+      const items = data2.results||data2.list||data2.patents||[];
+      if(!items.length) return '';
+      let s=`<div class="st" style="color:${color};margin-top:16px">${icon} ${label} (${items.length}건)</div>`;
+      items.slice(0,10).forEach(item=>{
+        const title = item.corp_name||item.cmpnNm||item.inventionTitle||item.title||item.report_nm||item.roadAddr||JSON.stringify(item).slice(0,60);
+        const desc = [item.ceo_nm||'', item.adres||item.jibunAddr||'', item.bzno||'', item.applicantName||'', item.registerStatus||'', item.rcept_dt||''].filter(Boolean).join(' · ');
+        s+=`<div class="blk" style="border-left:3px solid ${color};margin-bottom:6px;padding:10px 12px">
+          <div style="font-size:var(--fs-s);font-weight:700;color:#DDD;margin-bottom:4px">${san(title)}</div>
+          ${desc?`<div style="font-size:var(--fs-xs);color:#666">${san(desc)}</div>`:''}
+        </div>`;
+      });
+      return s;
+    }
+
+    // 섹션별 렌더링
     const allNews=[...(data.naver_news||[]),...(data.kakao_news||[])];
     if(allNews.length){
       h+=`<div class="st" style="color:#FF8C00;margin-top:16px">📰 뉴스·언론 (${allNews.length}건)</div>`;
       h+=renderItems(allNews,'#FF8C00','📰');
     }
-    
-    // 웹문서 섹션
+
     const allWeb=[...(data.naver_web||[]),...(data.kakao_web||[]),...(data.google||[])];
     if(allWeb.length){
       h+=`<div class="st" style="color:#4A90E2;margin-top:16px">🌐 웹문서·공식자료 (${allWeb.length}건)</div>`;
       h+=renderItems(allWeb,'#4A90E2','🌐');
     }
-    
-    // 블로그 섹션
-    const allBlog=[...(data.naver_blog||[]),...(data.kakao_blog||[])];
+
+    const allBlog=[...(data.naver_blog||[]),...(data.kakao_blog||[]),...(data.naver_cafe||[]),...(data.kakao_cafe||[])];
     if(allBlog.length){
       h+=`<div class="st" style="color:#AA88FF;margin-top:16px">📝 블로그·카페 (${allBlog.length}건)</div>`;
       h+=renderItems(allBlog,'#AA88FF','📝');
     }
 
-    if(!total){h='<div class="emp"><p>검색 결과가 없습니다. 다른 키워드로 시도해보세요.</p></div>';}
+    const allEtc=[...(data.naver_doc||[]),...(data.naver_kin||[])];
+    if(allEtc.length){
+      h+=`<div class="st" style="color:#88CCFF;margin-top:16px">📄 문서·지식iN (${allEtc.length}건)</div>`;
+      h+=renderItems(allEtc,'#88CCFF','📄');
+    }
+
+    // 공공DB 섹션
+    if(data.dart && (data.dart.list||[]).length){
+      h+=renderPublicDB(data.dart,'#00BFFF','🏢','DART 기업공시');
+    }
+    if(data.kipris && ((data.kipris.patents||[]).length+(data.kipris.trademarks||[]).length)){
+      h+=`<div class="st" style="color:#C9A84C;margin-top:16px">💡 특허청 KIPRIS (특허 ${(data.kipris.patents||[]).length}건 · 상표 ${(data.kipris.trademarks||[]).length}건)</div>`;
+      [...(data.kipris.patents||[]),...(data.kipris.trademarks||[])].slice(0,10).forEach(item=>{
+        h+=`<div class="blk" style="border-left:3px solid #C9A84C;margin-bottom:6px;padding:10px 12px">
+          <div style="font-size:var(--fs-s);font-weight:700;color:#DDD">${san(item.title||item.inventionTitle||'')}</div>
+          <div style="font-size:var(--fs-xs);color:#666">${san(item.app_no||'')} · ${san(item.app_date||item.applicationDate||'')} · ${san(item.status||item.registerStatus||'')}</div>
+        </div>`;
+      });
+    }
+    if(data.mlm && (data.mlm.results||[]).length){
+      h+=renderPublicDB(data.mlm,'#FF6644','⚠️','공정위 다단계사업자');
+    }
+    if(data.conglomerate && (data.conglomerate.results||[]).length){
+      h+=renderPublicDB(data.conglomerate,'#FF8844','🏭','공정위 대기업집단');
+    }
+    if(data.financial && (data.financial.results||[]).length){
+      h+=renderPublicDB(data.financial,'#44AAFF','🏦','금융위 금융회사');
+    }
+    if(data.juso && (data.juso.results||[]).length){
+      h+=renderPublicDB(data.juso,'#FF8844','📍','도로명주소');
+    }
+    if(data.business && data.business.b_no){
+      const biz=data.business;
+      const c=biz.b_stt_cd==='01'?'#00FF88':biz.b_stt_cd==='02'?'#FFA500':'#FF5555';
+      h+=`<div class="st" style="color:${c};margin-top:16px">🔎 국세청 사업자 조회</div>
+        <div class="blk" style="border-left:3px solid ${c};padding:10px 12px">
+          <div style="font-size:var(--fs-s);font-weight:700;color:${c}">${san(biz.b_no_formatted||'')} · ${san(biz.b_stt||'')}</div>
+          <div style="font-size:var(--fs-xs);color:#666">${san(biz.tax_type||'')} ${biz.end_dt?'· 폐업일: '+san(biz.end_dt):''}</div>
+        </div>`;
+    }
+
+    if(!total && !pubCount){
+      h='<div class="emp"><p>검색 결과가 없습니다. 다른 키워드로 시도해보세요.</p></div>';
+    }
+
     document.getElementById('sr-result').innerHTML=h;
-    mediaCount+=total;const mc=document.getElementById('mc');if(mc)mc.textContent=mediaCount;
-  }catch(e){document.getElementById('sr-result').innerHTML=`<div class="emp"><p>검색 오류: ${san(e.message)}</p></div>`;}
+    mediaCount+=(total+pubCount);
+    const mc=document.getElementById('mc');if(mc)mc.textContent=mediaCount;
+
+  }catch(e){
+    clearInterval(ldTimer);
+    document.getElementById('sr-result').innerHTML=`<div class="emp"><p>수집 오류: ${san(e.message)}</p></div>`;
+  }
   rBtn('sbtn','🔍 통합검색');
 }
 
