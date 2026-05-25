@@ -359,36 +359,72 @@ async def validate_business(b_no: str, p_nm: str = "", p_nm2: str = "",
 
 # ─── 통합 검색 (모든 소스 병렬) ─────────────────────────────────
 async def search_all(query: str, display: int = 20) -> dict:
+    import re as _re
+    is_biz_no = len(_re.sub(r"[^0-9]","",query)) == 10
     tasks = [
-        search_naver(query, "news",    display),
-        search_naver(query, "web",     display),
-        search_naver(query, "blog",    display),
-        search_naver(query, "cafe",    display),
-        search_naver(query, "doc",     10),
-        search_naver(query, "kin",     10),
-        search_kakao(query, "news",    1, 10),
-        search_kakao(query, "web",     1, 10),
-        search_kakao(query, "blog",    1, 10),
-        search_kakao(query, "cafe",    1, 10),
+        search_naver(query, "news",  display),
+        search_naver(query, "web",   display),
+        search_naver(query, "blog",  display),
+        search_naver(query, "cafe",  display),
+        search_naver(query, "doc",   10),
+        search_naver(query, "kin",   10),
+        search_kakao(query, "news",  1, 20),
+        search_kakao(query, "web",   1, 20),
+        search_kakao(query, "blog",  1, 20),
+        search_kakao(query, "cafe",  1, 20),
         search_google(query, 10, 1),
+        search_dart_corp(query),
+        search_kipris(query),
+        search_mlm(corp_name=query),
+        search_conglomerate(query),
+        search_financial_company(corp_name=query),
+        search_juso(query),
+        search_building_hub(query),
+        check_business(query) if is_biz_no else asyncio.sleep(0),
     ]
     results = await asyncio.gather(*tasks, return_exceptions=True)
-    def safe(r): return r if isinstance(r, list) else []
+    def sl(r): return r if isinstance(r, list) else []
+    def sd(r): return r if isinstance(r, dict) and not isinstance(r, Exception) else {}
+    google_raw = sl(results[10])
+    seen = set()
+    google_all = []
+    for item in google_raw:
+        u = item.get("url","") or item.get("link","")
+        if u and u not in seen:
+            seen.add(u)
+            google_all.append(item)
+    dart_d  = sd(results[11])
+    kip_d   = sd(results[12])
+    mlm_d   = sd(results[13])
+    cong_d  = sd(results[14])
+    fin_d   = sd(results[15])
+    juso_d  = sd(results[16])
+    bldg_d  = sd(results[17])
+    biz_d   = sd(results[18]) if is_biz_no else {}
+    pub_cnt = (
+        len(dart_d.get("list",[])) +
+        len(kip_d.get("patents",[])) + len(kip_d.get("trademarks",[])) +
+        len(mlm_d.get("results",[])) + len(cong_d.get("results",[])) +
+        len(fin_d.get("results",[])) + len(juso_d.get("results",[]))
+    )
+    all_items = (sl(results[0])+sl(results[1])+sl(results[2])+sl(results[3])+
+                 sl(results[4])+sl(results[5])+sl(results[6])+sl(results[7])+
+                 sl(results[8])+sl(results[9])+google_all)
     return {
-        "naver_news":  safe(results[0]),
-        "naver_web":   safe(results[1]),
-        "naver_blog":  safe(results[2]),
-        "naver_cafe":  safe(results[3]),
-        "naver_doc":   safe(results[4]),
-        "naver_kin":   safe(results[5]),
-        "kakao_news":  safe(results[6]),
-        "kakao_web":   safe(results[7]),
-        "kakao_blog":  safe(results[8]),
-        "kakao_cafe":  safe(results[9]),
-        "google":      safe(results[10]),
-        "total": sum(len(safe(r)) for r in results)
+        "naver_news": sl(results[0]), "naver_web":  sl(results[1]),
+        "naver_blog": sl(results[2]), "naver_cafe": sl(results[3]),
+        "naver_doc":  sl(results[4]), "naver_kin":  sl(results[5]),
+        "kakao_news": sl(results[6]), "kakao_web":  sl(results[7]),
+        "kakao_blog": sl(results[8]), "kakao_cafe": sl(results[9]),
+        "google":      google_all,
+        "dart":        dart_d,  "kipris":      kip_d,
+        "mlm":         mlm_d,  "conglomerate":cong_d,
+        "financial":   fin_d,  "juso":        juso_d,
+        "building":    bldg_d, "business":    biz_d,
+        "total":       len(all_items),
+        "public_count":pub_cnt,
+        "query":       query,
     }
-
 # ─── 엔드포인트 ────────────────────────────────────────────────
 
 @app.get("/", response_class=HTMLResponse)
